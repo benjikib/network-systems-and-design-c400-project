@@ -1,8 +1,13 @@
+import argparse
 import pandas as pd
 import numpy as np
 from scipy.io import arff
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, LabelEncoder
+
+parser = argparse.ArgumentParser()
+parser.add_argument('arff_file', help='path to the ARFF dataset file')
+args = parser.parse_args()
 from sklearn.metrics import accuracy_score, f1_score, classification_report, confusion_matrix
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -21,7 +26,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f"Using device: {device}")
 
 # load the ARFF as a dataframe
-data, meta = arff.loadarff('TimeBasedFeatures-Dataset-120s-AllinOne.arff')
+data, meta = arff.loadarff(args.arff_file)
 df = pd.DataFrame(data)
 df = df.apply(lambda col: col.map(lambda x: x.decode('utf-8') if isinstance(x, bytes) else x))
 
