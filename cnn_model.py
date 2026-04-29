@@ -6,7 +6,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 
 parser = argparse.ArgumentParser()
-parser.add_argument('arff_file', help='path to the ARFF dataset file')
+parser.add_argument('arff_file', nargs='?', default='TimeBasedFeatures-Dataset-120s.arff', help='path to the ARFF dataset file')
 args = parser.parse_args()
 from sklearn.metrics import accuracy_score, f1_score, classification_report, confusion_matrix
 import matplotlib.pyplot as plt
@@ -22,7 +22,7 @@ LR          = 1e-3
 PATIENCE    = 10
 
 torch.manual_seed(RANDOM_SEED)
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+device = torch.device('mps' if torch.backends.mps.is_available() else 'cuda' if torch.cuda.is_available() else 'cpu')
 print(f"Using device: {device}")
 
 # load the ARFF as a dataframe

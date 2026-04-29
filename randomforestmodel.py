@@ -6,7 +6,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 
 parser = argparse.ArgumentParser()
-parser.add_argument('arff_file', help='path to the ARFF dataset file')
+parser.add_argument('arff_file', nargs='?', default='TimeBasedFeatures-Dataset-120s.arff', help='path to the ARFF dataset file')
 args = parser.parse_args()
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, f1_score, classification_report, confusion_matrix
