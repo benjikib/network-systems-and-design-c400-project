@@ -9,12 +9,20 @@ parser = argparse.ArgumentParser()
 parser.add_argument('arff_file', nargs='?', default='TimeBasedFeatures-Dataset-120s.arff', help='path to the ARFF dataset file')
 args = parser.parse_args()
 
-# load the ARFF as a dataframe 
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score, f1_score, classification_report, confusion_matrix
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# load the ARFF as a dataframe
 data, meta = arff.loadarff(args.arff_file)
 df = pd.DataFrame(data)
 df = df.apply(lambda col: col.map(lambda x: x.decode('utf-8') if isinstance(x, bytes) else x))
 
-# separate the features and the label 
+# drop underperforming classes with too few samples to classify reliably
+df = df[~df['class1'].isin(['STREAMING', 'VPN-CHAT'])]
+
+# separate the features and the label
 X = df.drop('class1', axis=1)
 y = df['class1']
 
@@ -23,7 +31,7 @@ le = LabelEncoder()
 y_encoded = le.fit_transform(y)
 print("Classes:", le.classes_)
 
-# split the data 
+# split the data
 # split off 20% for temp (val + test)
 X_train, X_temp, y_train, y_temp = train_test_split(
     X, y_encoded, test_size=0.2, stratify=y_encoded, random_state=42
@@ -45,11 +53,6 @@ X_val_scaled   = scaler.transform(X_val)
 X_test_scaled  = scaler.transform(X_test)
 
 # baseline model - logistic regression
-from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score, f1_score, classification_report, confusion_matrix
-import matplotlib.pyplot as plt
-import seaborn as sns
-
 baseline = LogisticRegression(
     class_weight='balanced',
     max_iter=1000,
@@ -57,26 +60,31 @@ baseline = LogisticRegression(
 )
 baseline.fit(X_train_scaled, y_train)
 
-# evaluate on validation set
+def evaluate(y_true, y_pred, split_name, class_names):
+    acc = accuracy_score(y_true, y_pred)
+    f1  = f1_score(y_true, y_pred, average='macro', zero_division=0)
+    print(f"\n--- {split_name} ---")
+    print(f"Accuracy: {acc:.4f} | Macro F1: {f1:.4f}")
+    print(classification_report(y_true, y_pred, target_names=class_names, zero_division=0))
+
+# evaluate on validation set (used for model selection)
 y_val_pred = baseline.predict(X_val_scaled)
+evaluate(y_val, y_val_pred, 'Baseline Logistic Regression — Validation', le.classes_)
 
-val_accuracy = accuracy_score(y_val, y_val_pred)
-val_f1       = f1_score(y_val, y_val_pred, average='macro')
+# evaluate on held-out test set (final reported number)
+y_test_pred = baseline.predict(X_test_scaled)
+evaluate(y_test, y_test_pred, 'Baseline Logistic Regression — Test', le.classes_)
 
-print(f"\nBaseline Validation Accuracy: {val_accuracy:.4f}")
-print(f"Baseline Validation Macro F1: {val_f1:.4f}")
-print("\nDetailed Report:")
-print(classification_report(y_val, y_val_pred, target_names=le.classes_))
-
-# confusion matrix
-cm = confusion_matrix(y_val, y_val_pred)
+# confusion matrix (test set)
+cm = confusion_matrix(y_test, y_test_pred)
 plt.figure(figsize=(8, 6))
 sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
             xticklabels=le.classes_,
             yticklabels=le.classes_)
-plt.title('Baseline Logistic Regression — Confusion Matrix')
+plt.title('Baseline Logistic Regression — Confusion Matrix (Test)')
 plt.ylabel('True Label')
 plt.xlabel('Predicted Label')
+plt.xticks(rotation=45, ha='right')
 plt.tight_layout()
 plt.savefig('baseline_confusion_matrix.png')
 plt.show()

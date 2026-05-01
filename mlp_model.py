@@ -8,7 +8,6 @@ from sklearn.preprocessing import StandardScaler, LabelEncoder
 parser = argparse.ArgumentParser()
 parser.add_argument('arff_file', nargs='?', default='TimeBasedFeatures-Dataset-15s-AllinOne.arff', help='path to the ARFF dataset file')
 args = parser.parse_args()
-
 from sklearn.metrics import accuracy_score, f1_score, classification_report, confusion_matrix
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -28,10 +27,12 @@ torch.manual_seed(RANDOM_SEED)
 device = torch.device('mps' if torch.backends.mps.is_available() else 'cuda' if torch.cuda.is_available() else 'cpu')
 print(f"Using device: {device}")
 
+# load the ARFF as a dataframe
 data, meta = arff.loadarff(args.arff_file)
 df = pd.DataFrame(data)
 df = df.apply(lambda col: col.map(lambda x: x.decode('utf-8') if isinstance(x, bytes) else x))
 
+# separate the features and the label
 X = df.drop('class1', axis=1)
 y = df['class1']
 
@@ -42,6 +43,8 @@ n_features = X.shape[1]
 print("Classes:", le.classes_)
 print(f"Features: {n_features} | Classes: {n_classes}")
 
+# split the data
+# split off 20% for temp (val + test)
 X_train, X_temp, y_train, y_temp = train_test_split(
     X, y_encoded, test_size=0.2, stratify=y_encoded, random_state=RANDOM_SEED
 )
@@ -50,14 +53,16 @@ X_val, X_test, y_val, y_test = train_test_split(
 )
 print(f"Train: {len(X_train)} | Val: {len(X_val)} | Test: {len(X_test)}")
 
+# scale features
+# fit on training data, then apply to val and test
 scaler = StandardScaler()
 X_train_scaled = scaler.fit_transform(X_train)
 X_val_scaled   = scaler.transform(X_val)
 X_test_scaled  = scaler.transform(X_test)
 
+# build pytorch datasets
 def to_tensors(X_np, y_np):
-    # unsqueeze to (batch, 1, features) — treat features as a 1D sequence with 1 channel
-    X_t = torch.tensor(X_np, dtype=torch.float32).unsqueeze(1)
+    X_t = torch.tensor(X_np, dtype=torch.float32)
     y_t = torch.tensor(y_np, dtype=torch.long)
     return TensorDataset(X_t, y_t)
 
@@ -69,40 +74,44 @@ train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True)
 val_loader   = DataLoader(val_ds,   batch_size=BATCH_SIZE)
 test_loader  = DataLoader(test_ds,  batch_size=BATCH_SIZE)
 
-# 1D CNN — treats the feature vector as a sequence of length n_features with 1 channel.
-# This is the standard way to apply conv to tabular data, but convolution assumes
-# local correlations between adjacent features, which don't exist here since feature
-# ordering is arbitrary. Included for comparison against the MLP.
-class TrafficCNN1D(nn.Module):
+# MLP - fully connected network, more appropriate than 1D CNN for tabular features
+# convolution assumes spatial/sequential structure which tabular data does not have
+class TrafficMLP(nn.Module):
     def __init__(self, n_features, n_classes):
         super().__init__()
-        self.conv = nn.Sequential(
-            nn.Conv1d(1, 32, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.Conv1d(32, 64, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.AdaptiveAvgPool1d(8),
-        )
-        self.classifier = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(64 * 8, 128),
+        self.network = nn.Sequential(
+            nn.Linear(n_features, 256),
+            nn.LayerNorm(256),
             nn.ReLU(),
             nn.Dropout(0.3),
+
+            nn.Linear(256, 256),
+            nn.LayerNorm(256),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+
+            nn.Linear(256, 128),
+            nn.LayerNorm(128),
+            nn.ReLU(),
+            nn.Dropout(0.2),
+
             nn.Linear(128, n_classes),
         )
 
     def forward(self, x):
-        return self.classifier(self.conv(x))
+        return self.network(x)
 
-model = TrafficCNN1D(n_features, n_classes).to(device)
+model = TrafficMLP(n_features, n_classes).to(device)
 print(model)
 
+# training setup
 criterion = nn.CrossEntropyLoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
 scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
     optimizer, T_max=EPOCHS, eta_min=1e-6
 )
 
+# train loop with early stopping
 best_val_loss  = float('inf')
 patience_count = 0
 best_weights   = None
@@ -167,26 +176,31 @@ def evaluate(y_true, y_pred, split_name, class_names):
     print(f"Accuracy: {acc:.4f} | Macro F1: {f1:.4f}")
     print(classification_report(y_true, y_pred, target_names=class_names, zero_division=0))
 
+# evaluate on validation set (used for model selection)
 y_val_pred = predict(val_loader)
-evaluate(y_val, y_val_pred, 'CNN-1D — Validation', le.classes_)
+evaluate(y_val, y_val_pred, 'MLP — Validation', le.classes_)
 
+# evaluate on held-out test set (final reported number)
 y_test_pred = predict(test_loader)
-evaluate(y_test, y_test_pred, 'CNN-1D — Test', le.classes_)
+evaluate(y_test, y_test_pred, 'MLP — Test', le.classes_)
 
+# confusion matrix (test set)
 cm = confusion_matrix(y_test, y_test_pred)
 plt.figure(figsize=(10, 8))
 sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
             xticklabels=le.classes_, yticklabels=le.classes_)
-plt.title('CNN-1D — Confusion Matrix (Test)')
+plt.title('MLP — Confusion Matrix (Test)')
 plt.ylabel('True Label')
 plt.xlabel('Predicted Label')
 plt.xticks(rotation=45, ha='right')
 plt.tight_layout()
-plt.savefig('cnn1d_confusion_matrix.png')
+plt.savefig('cnn_confusion_matrix.png')
 plt.show()
-print("Saved cnn1d_confusion_matrix.png")
+print("Saved cnn_confusion_matrix.png")
 
+# training curves
 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
+
 ax1.plot(history['train_acc'], label='Train')
 ax1.plot(history['val_acc'],   label='Val')
 ax1.set_title('Accuracy over Epochs')
@@ -202,9 +216,10 @@ ax2.set_ylabel('Loss')
 ax2.legend()
 
 plt.tight_layout()
-plt.savefig('cnn1d_training_curves.png')
+plt.savefig('cnn_training_curves.png')
 plt.show()
-print("Saved cnn1d_training_curves.png")
+print("Saved cnn_training_curves.png")
 
-torch.save(model.state_dict(), 'cnn1d_model.pt')
-print("Model saved as cnn1d_model.pt")
+# save model weights
+torch.save(model.state_dict(), 'cnn_model.pt')
+print("Model saved as cnn_model.pt")

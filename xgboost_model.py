@@ -9,7 +9,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('arff_file', nargs='?', default='TimeBasedFeatures-Dataset-120s.arff', help='path to the ARFF dataset file')
 args = parser.parse_args()
 
-from sklearn.ensemble import RandomForestClassifier
+from xgboost import XGBClassifier
 from sklearn.metrics import accuracy_score, f1_score, classification_report, confusion_matrix
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -52,14 +52,25 @@ X_train_scaled = scaler.fit_transform(X_train)
 X_val_scaled   = scaler.transform(X_val)
 X_test_scaled  = scaler.transform(X_test)
 
-# random forest model
-rf_model = RandomForestClassifier(
-    n_estimators=200,
-    class_weight='balanced',
+# xgboost model
+xgb_model = XGBClassifier(
+    n_estimators=500,
+    max_depth=6,
+    learning_rate=0.1,
+    subsample=0.8,
+    colsample_bytree=0.8,
+    objective='multi:softmax',
+    num_class=len(le.classes_),
     random_state=42,
-    n_jobs=-1
+    n_jobs=-1,
+    eval_metric='mlogloss',
+    early_stopping_rounds=20,
 )
-rf_model.fit(X_train_scaled, y_train)
+xgb_model.fit(
+    X_train_scaled, y_train,
+    eval_set=[(X_val_scaled, y_val)],
+    verbose=50,
+)
 
 def evaluate(y_true, y_pred, split_name, class_names):
     acc = accuracy_score(y_true, y_pred)
@@ -69,12 +80,12 @@ def evaluate(y_true, y_pred, split_name, class_names):
     print(classification_report(y_true, y_pred, target_names=class_names, zero_division=0))
 
 # evaluate on validation set (used for model selection)
-y_val_pred = rf_model.predict(X_val_scaled)
-evaluate(y_val, y_val_pred, 'Random Forest — Validation', le.classes_)
+y_val_pred = xgb_model.predict(X_val_scaled)
+evaluate(y_val, y_val_pred, 'XGBoost — Validation', le.classes_)
 
 # evaluate on held-out test set (final reported number)
-y_test_pred = rf_model.predict(X_test_scaled)
-evaluate(y_test, y_test_pred, 'Random Forest — Test', le.classes_)
+y_test_pred = xgb_model.predict(X_test_scaled)
+evaluate(y_test, y_test_pred, 'XGBoost — Test', le.classes_)
 
 # confusion matrix (test set)
 cm = confusion_matrix(y_test, y_test_pred)
@@ -82,20 +93,20 @@ plt.figure(figsize=(10, 8))
 sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
             xticklabels=le.classes_,
             yticklabels=le.classes_)
-plt.title('Random Forest — Confusion Matrix (Test)')
+plt.title('XGBoost — Confusion Matrix (Test)')
 plt.ylabel('True Label')
 plt.xlabel('Predicted Label')
 plt.xticks(rotation=45, ha='right')
 plt.tight_layout()
-plt.savefig('rf_confusion_matrix.png')
+plt.savefig('xgb_confusion_matrix.png')
 plt.show()
-print("Confusion matrix saved as rf_confusion_matrix.png")
+print("Confusion matrix saved as xgb_confusion_matrix.png")
 
 # feature importances
-importances = pd.Series(rf_model.feature_importances_, index=X.columns)
+importances = pd.Series(xgb_model.feature_importances_, index=X.columns)
 importances.sort_values().plot(kind='barh', figsize=(8, 6))
-plt.title('Random Forest — Feature Importances')
+plt.title('XGBoost — Feature Importances')
 plt.tight_layout()
-plt.savefig('feature_importances.png')
+plt.savefig('xgb_feature_importances.png')
 plt.show()
-print("Feature importances saved as feature_importances.png")
+print("Feature importances saved as xgb_feature_importances.png")
