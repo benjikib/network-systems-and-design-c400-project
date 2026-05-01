@@ -6,7 +6,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 
 parser = argparse.ArgumentParser()
-parser.add_argument('arff_file', nargs='?', default='TimeBasedFeatures-Dataset-120s.arff', help='path to the ARFF dataset file')
+parser.add_argument('arff_file', nargs='?', default='TimeBasedFeatures-Dataset-15s-AllinOne.arff', help='path to the ARFF dataset file')
 args = parser.parse_args()
 
 from sklearn.ensemble import RandomForestClassifier
@@ -18,9 +18,6 @@ import seaborn as sns
 data, meta = arff.loadarff(args.arff_file)
 df = pd.DataFrame(data)
 df = df.apply(lambda col: col.map(lambda x: x.decode('utf-8') if isinstance(x, bytes) else x))
-
-# drop underperforming classes with too few samples to classify reliably
-df = df[~df['class1'].isin(['STREAMING', 'VPN-CHAT'])]
 
 # separate the features and the label
 X = df.drop('class1', axis=1)

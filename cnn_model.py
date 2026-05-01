@@ -81,11 +81,10 @@ class TrafficCNN1D(nn.Module):
             nn.ReLU(),
             nn.Conv1d(32, 64, kernel_size=3, padding=1),
             nn.ReLU(),
-            nn.AdaptiveAvgPool1d(8),
+            nn.Flatten(),
         )
         self.classifier = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(64 * 8, 128),
+            nn.Linear(64 * 23, 128),
             nn.ReLU(),
             nn.Dropout(0.3),
             nn.Linear(128, n_classes),
