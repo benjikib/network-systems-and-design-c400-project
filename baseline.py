@@ -72,6 +72,11 @@ evaluate(y_val, y_val_pred, 'Baseline Logistic Regression — Validation', le.cl
 y_test_pred = baseline.predict(X_test_scaled)
 evaluate(y_test, y_test_pred, 'Baseline Logistic Regression — Test', le.classes_)
 
+# feature importance: mean absolute coefficient across all classes
+importances = pd.Series(np.abs(baseline.coef_).mean(axis=0), index=X.columns)
+print("\n--- Logistic Regression Feature Importances (mean |coef|) ---")
+print(importances.sort_values(ascending=False).to_string())
+
 # confusion matrix (test set)
 cm = confusion_matrix(y_test, y_test_pred)
 plt.figure(figsize=(8, 6))
@@ -83,6 +88,6 @@ plt.ylabel('True Label')
 plt.xlabel('Predicted Label')
 plt.xticks(rotation=45, ha='right')
 plt.tight_layout()
-plt.savefig('baseline_confusion_matrix.png')
+plt.savefig('figures/baseline_confusion_matrix.png')
 plt.show()
 print("Confusion matrix saved as baseline_confusion_matrix.png")
